@@ -1,0 +1,12 @@
+{
+    "name": "talent-filter/app",
+    "description": "Talent Filter - Sistema de separación y clasificación de CVs",
+    "require": {
+        "setasign/fpdf": "^1.8",
+        "setasign/fpdi": "^2.6",
+        "smalot/pdfparser": "^2.10"
+    },
+    "config": {
+        "optimize-autoloader": true
+    }
+}

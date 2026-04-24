@@ -1,0 +1,21 @@
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    
+    RewriteRule ^config/ - [F,L]
+    RewriteRule ^includes/ - [F,L]
+    RewriteRule ^composer\.(json|lock|phar)$ - [F,L]
+    RewriteRule ^vendor/ - [F,L]
+    RewriteRule ^uploads/originals/ - [F,L]
+    RewriteRule ^uploads/pages/ - [F,L]
+</IfModule>
+
+# PHP settings for large uploads
+<IfModule mod_php.c>
+    php_value upload_max_filesize 512M
+    php_value post_max_size 512M
+    php_value max_execution_time 300
+    php_value memory_limit 512M
+    php_value max_input_time 300
+</IfModule>

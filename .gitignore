@@ -1,0 +1,6 @@
+/vendor/
+/uploads/
+composer.phar
+Thumbs.db
+.DS_Store
+*.log
