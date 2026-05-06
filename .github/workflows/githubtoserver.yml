@@ -15,6 +15,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup PHP + Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          tools: composer:v2
+          coverage: none
+
+      - name: Composer install (en runner)
+        run: composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+
       - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
@@ -22,13 +32,12 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Crear tarball del codigo
+      - name: Crear tarball (incluye vendor/)
         run: |
           tar \
             --exclude='./.git' \
             --exclude='./.github' \
             --exclude='./uploads' \
-            --exclude='./vendor' \
             --exclude='./composer.phar' \
             --exclude='./node_modules' \
             -czf /tmp/talentfilter-deploy.tar.gz .
@@ -52,7 +61,7 @@ jobs:
           echo "=== Desplegando en $DEPLOY_ROOT ==="
           mkdir -p "$DEPLOY_ROOT"
 
-          # Extrae el tarball preservando uploads/ existente (uploads no esta en el tar)
+          # Extrae el tarball (incluye vendor/ ya construido en el runner)
           tar xzf /tmp/talentfilter-deploy.tar.gz -C "$DEPLOY_ROOT"
           rm -f /tmp/talentfilter-deploy.tar.gz
 
@@ -61,15 +70,6 @@ jobs:
                    "$DEPLOY_ROOT/uploads/pages" \
                    "$DEPLOY_ROOT/uploads/unified"
           chmod -R 775 "$DEPLOY_ROOT/uploads" 2>/dev/null || true
-
-          # Composer install (si esta disponible)
-          if command -v composer >/dev/null 2>&1; then
-            echo "=== composer install ==="
-            cd "$DEPLOY_ROOT"
-            composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
-          else
-            echo "AVISO: composer no encontrado en PATH, saltando install."
-          fi
 
           echo "=== Deploy OK ==="
           ENDSSH
