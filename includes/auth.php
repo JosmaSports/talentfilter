@@ -197,13 +197,32 @@ function verifyCsrf(?string $token): bool {
     return hash_equals($_SESSION['csrf'], $token);
 }
 
+/**
+ * Garantiza que la tabla users exista. Idempotente: usa CREATE TABLE IF NOT EXISTS.
+ * Permite que el registro funcione aunque no se haya ejecutado install.php.
+ */
+function ensureUsersTable(): void {
+    $db = getDB();
+    $db->exec(
+        "CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            email VARCHAR(190) NOT NULL UNIQUE,
+            password_hash VARCHAR(255) NOT NULL,
+            name VARCHAR(190) DEFAULT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login_at DATETIME DEFAULT NULL,
+            INDEX idx_email (email)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci"
+    );
+}
+
 function userExists(): bool {
     try {
         $db = getDB();
         $r = $db->query('SELECT COUNT(*) AS c FROM users')->fetch();
         return ((int)($r['c'] ?? 0)) > 0;
     } catch (\PDOException $e) {
-        // Si la tabla aún no existe (sin install.php ejecutado), tratamos como sin usuarios.
+        // Si la tabla aún no existe, tratamos como sin usuarios.
         return false;
     }
 }
@@ -220,6 +239,15 @@ function registerInitialUser(string $email, string $password, string $name = '')
         return [
             'ok'  => false,
             'msg' => 'La contraseña debe tener al menos ' . MIN_PASSWORD_LENGTH . ' caracteres.',
+        ];
+    }
+
+    try {
+        ensureUsersTable();
+    } catch (\PDOException $e) {
+        return [
+            'ok'  => false,
+            'msg' => 'No se pudo preparar la tabla users. Detalle: ' . $e->getMessage(),
         ];
     }
 
