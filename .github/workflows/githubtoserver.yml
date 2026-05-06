@@ -71,6 +71,12 @@ jobs:
                    "$DEPLOY_ROOT/uploads/unified"
           chmod -R 775 "$DEPLOY_ROOT/uploads" 2>/dev/null || true
 
+          # Eliminar ficheros obsoletos que ya no estan en el repo
+          # (tar extract no borra ficheros, solo los sobreescribe)
+          rm -f "$DEPLOY_ROOT/register.php"
+          rm -f "$DEPLOY_ROOT/api/webhook-deploy.php"
+          rm -f "$DEPLOY_ROOT/deploy.sh"
+
           echo "=== Deploy OK ==="
           ENDSSH
 

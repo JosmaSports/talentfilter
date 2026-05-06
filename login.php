@@ -9,12 +9,6 @@ if (isLoggedIn()) {
     exit;
 }
 
-// Si todavía no hay ningún usuario, redirigir al registro inicial.
-if (!userExists()) {
-    header('Location: ' . $baseUrl . '/register.php');
-    exit;
-}
-
 $error = '';
 $emailValue = '';
 
