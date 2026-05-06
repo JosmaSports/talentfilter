@@ -7,16 +7,73 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+      REMOTE_USER: ${{ secrets.REMOTE_USER }}
+      DEPLOY_ROOT: /var/www/talent-filter
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Deploy via Rsync
-        uses: Burnett01/rsync-deployments@5.2.1
-        with:
-          switches: -avzr --delete -e "ssh -o StrictHostKeyChecking=no"
-          path: ./  # Carpeta del código en GitHub
-          remote_path: /var/www/talent-filter/ # Carpeta en tu servidor
-          remote_host: ${{ secrets.REMOTE_HOST }}
-          remote_user: ${{ secrets.REMOTE_USER }}
-          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: Crear tarball del codigo
+        run: |
+          tar \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./uploads' \
+            --exclude='./vendor' \
+            --exclude='./composer.phar' \
+            --exclude='./node_modules' \
+            -czf /tmp/talentfilter-deploy.tar.gz .
+          ls -lh /tmp/talentfilter-deploy.tar.gz
+
+      - name: Enviar y desplegar en servidor
+        run: |
+          set -euo pipefail
+
+          scp -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              /tmp/talentfilter-deploy.tar.gz \
+              "$REMOTE_USER@$REMOTE_HOST:/tmp/talentfilter-deploy.tar.gz"
+
+          ssh -i ~/.ssh/deploy_key \
+              -o StrictHostKeyChecking=no \
+              "$REMOTE_USER@$REMOTE_HOST" \
+              "DEPLOY_ROOT='$DEPLOY_ROOT' bash -s" << 'ENDSSH'
+          set -euo pipefail
+
+          echo "=== Desplegando en $DEPLOY_ROOT ==="
+          mkdir -p "$DEPLOY_ROOT"
+
+          # Extrae el tarball preservando uploads/ existente (uploads no esta en el tar)
+          tar xzf /tmp/talentfilter-deploy.tar.gz -C "$DEPLOY_ROOT"
+          rm -f /tmp/talentfilter-deploy.tar.gz
+
+          # Asegura subcarpetas de uploads
+          mkdir -p "$DEPLOY_ROOT/uploads/originals" \
+                   "$DEPLOY_ROOT/uploads/pages" \
+                   "$DEPLOY_ROOT/uploads/unified"
+          chmod -R 775 "$DEPLOY_ROOT/uploads" 2>/dev/null || true
+
+          # Composer install (si esta disponible)
+          if command -v composer >/dev/null 2>&1; then
+            echo "=== composer install ==="
+            cd "$DEPLOY_ROOT"
+            composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
+          else
+            echo "AVISO: composer no encontrado en PATH, saltando install."
+          fi
+
+          echo "=== Deploy OK ==="
+          ENDSSH
+
+      - name: Limpieza
+        if: always()
+        run: rm -f ~/.ssh/deploy_key /tmp/talentfilter-deploy.tar.gz
