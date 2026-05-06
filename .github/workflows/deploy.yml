@@ -66,8 +66,8 @@ jobs:
         continue-on-error: true
         env:
           SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
-          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+          REMOTE_HOST: ${{ secrets.HOST }}
+          REMOTE_USER: ${{ secrets.USER }}
         run: |
           set -euo pipefail
           echo "=== Intentando deploy via SSH (fallback) ==="
