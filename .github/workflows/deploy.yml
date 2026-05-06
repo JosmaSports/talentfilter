@@ -72,10 +72,10 @@ jobs:
           set -euo pipefail
           echo "=== Intentando deploy via SSH (fallback) ==="
 
-          if [ -z "${{ secrets.GITHUB_DEPLOY_PAT }}" ]; then
-            echo "::warning::Secret GITHUB_DEPLOY_PAT vacío: el servidor intentará la URL pública del .tar.gz (en repos privados suele dar 404). Crea un PAT con permiso Contents: Read y añade GITHUB_DEPLOY_PAT en Actions secrets."
+          if [ -z "${{ secrets.GH_DEPLOY_PAT }}" ]; then
+            echo "::warning::Secret GH_DEPLOY_PAT vacío: el servidor intentará la URL pública del .tar.gz (en repos privados suele dar 404). Crea un PAT con permiso Contents: Read y añade GH_DEPLOY_PAT en Actions secrets."
           else
-            echo "Secret GITHUB_DEPLOY_PAT presente (valor oculto en logs)."
+            echo "Secret GH_DEPLOY_PAT presente (valor oculto en logs)."
           fi
 
           mkdir -p ~/.ssh
@@ -87,7 +87,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             "$REMOTE_USER@$REMOTE_HOST" << ENDSSH
           set -euo pipefail
-          GITHUB_DEPLOY_PAT='${{ secrets.GITHUB_DEPLOY_PAT }}'
+          GH_DEPLOY_PAT='${{ secrets.GH_DEPLOY_PAT }}'
           DEPLOY_PATH_OVERRIDE='${{ secrets.REMOTE_DEPLOY_PATH }}'
           if [ -n "\$DEPLOY_PATH_OVERRIDE" ]; then
             DEPLOY_ROOT="\$DEPLOY_PATH_OVERRIDE"
@@ -97,16 +97,16 @@ jobs:
           echo "=== Descargando código desde GitHub (curl + tar en el servidor) ==="
           echo "Ruta de despliegue: \$DEPLOY_ROOT"
           mkdir -p "\$DEPLOY_ROOT"
-          if [ -n "\$GITHUB_DEPLOY_PAT" ]; then
+          if [ -n "\$GH_DEPLOY_PAT" ]; then
             echo "Usando API de GitHub (token configurado)."
-            if ! curl -sSL -f -H "Authorization: Bearer \$GITHUB_DEPLOY_PAT" -H "Accept: application/vnd.github+json" -H "User-Agent: TF-Deploy-SSH" "https://api.github.com/repos/JosmaSports/talentfilter/tarball/main" -o /tmp/talentfilter-main.tar.gz; then
+            if ! curl -sSL -f -H "Authorization: Bearer \$GH_DEPLOY_PAT" -H "Accept: application/vnd.github+json" -H "User-Agent: TF-Deploy-SSH" "https://api.github.com/repos/JosmaSports/talentfilter/tarball/main" -o /tmp/talentfilter-main.tar.gz; then
               echo "ERROR: curl a la API de GitHub falló (401/403/404 o red). Revisa que el PAT tenga acceso al repo JosmaSports/talentfilter y que no haya caducado."
               exit 1
             fi
           else
             echo "Descarga pública (fallará si el repo es privado)."
             if ! curl -sSL -f https://github.com/JosmaSports/talentfilter/archive/refs/heads/main.tar.gz -o /tmp/talentfilter-main.tar.gz; then
-              echo "ERROR: descarga pública falló. Añade el secret GITHUB_DEPLOY_PAT en el repositorio."
+              echo "ERROR: descarga pública falló. Añade el secret GH_DEPLOY_PAT en el repositorio."
               exit 1
             fi
           fi
