@@ -6,6 +6,8 @@
  */
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+requireApiAuth();
 
 $pageId = (int)($_GET['page_id'] ?? 0);
 if (!$pageId) {

@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../includes/functions.php';
+require_once __DIR__ . '/../includes/auth.php';
+requireApiAuth();
 
 header('Content-Type: application/json; charset=utf-8');
 set_time_limit(120);

@@ -124,6 +124,16 @@ try {
         INDEX idx_created (created_at),
         INDEX idx_selection (selection_id)
     ) ENGINE=InnoDB;
+
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        email VARCHAR(190) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        name VARCHAR(190) DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        last_login_at DATETIME DEFAULT NULL,
+        INDEX idx_email (email)
+    ) ENGINE=InnoDB;
     SQL;
 
     $pdo->exec($sql);

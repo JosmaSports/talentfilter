@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/includes/functions.php';
+require_once __DIR__ . '/includes/auth.php';
+
+$currentUser = requireLogin();
 
 $page = $_GET['page'] ?? 'extractor';
 $validPages = ['extractor', 'pendientes', 'listos', 'configuracion', 'logs'];
@@ -64,6 +67,22 @@ $pageTitle = $pageTitles[$page] ?? 'Talent Filter';
             </a>
         </nav>
         <div class="sidebar-footer">
+            <div class="sidebar-user">
+                <div class="sidebar-user-avatar">
+                    <?php
+                        $displayName = $currentUser['name'] ?: $currentUser['email'];
+                        $initial = strtoupper(mb_substr($displayName, 0, 1, 'UTF-8'));
+                    ?>
+                    <?= sanitize($initial) ?>
+                </div>
+                <div class="sidebar-user-info">
+                    <div class="sidebar-user-name" title="<?= sanitize($displayName) ?>"><?= sanitize($displayName) ?></div>
+                    <div class="sidebar-user-email" title="<?= sanitize($currentUser['email']) ?>"><?= sanitize($currentUser['email']) ?></div>
+                </div>
+                <a href="<?= sanitize(defined('BASE_URL') && BASE_URL !== '' ? BASE_URL : '') ?>/logout.php" class="sidebar-user-logout" title="Cerrar sesión">
+                    <i class="fas fa-sign-out-alt"></i>
+                </a>
+            </div>
             <small>&copy; <?= date('Y') ?> Talent Filter</small>
         </div>
     </aside>
