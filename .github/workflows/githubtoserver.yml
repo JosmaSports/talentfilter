@@ -1,0 +1,22 @@
+name: Enviar al servidor
+on:
+  push:
+    branches:
+      - main  # Se ejecuta cuando se sube algo a la rama principal
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via Rsync
+        uses: Burnett01/rsync-deployments@5.2.1
+        with:
+          switches: -avzr --delete -e "ssh -o StrictHostKeyChecking=no"
+          path: ./  # Carpeta del código en GitHub
+          remote_path: /var/www/talent-filter/ # Carpeta en tu servidor
+          remote_host: ${{ secrets.HOST }}
+          remote_user: ${{ secrets.USER }}
+          remote_key: ${{ secrets.SSH_PRIVATE_KEY }}
