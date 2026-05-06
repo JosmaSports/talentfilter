@@ -11,13 +11,19 @@ define('ORIGINALS_PATH', UPLOADS_PATH . '/originals');
 define('PAGES_PATH', UPLOADS_PATH . '/pages');
 define('UNIFIED_PATH', UPLOADS_PATH . '/unified');
 
-// BASE_URL configurable por entorno: en producción el subdominio sirve la app
-// desde la raíz; en XAMPP local se sirve bajo /talent-filter.
+// BASE_URL: en producción el subdominio sirve la app desde la raíz, en XAMPP
+// local se sirve bajo /talent-filter. Se puede forzar con APP_BASE_URL, y si no
+// se autodetecta a partir de SCRIPT_NAME para evitar configuración manual.
 $envBaseUrl = getenv('APP_BASE_URL');
 if ($envBaseUrl !== false) {
     define('BASE_URL', rtrim($envBaseUrl, '/'));
 } else {
-    define('BASE_URL', '/talent-filter');
+    $scriptName = $_SERVER['SCRIPT_NAME'] ?? '';
+    if (strpos($scriptName, '/talent-filter/') === 0) {
+        define('BASE_URL', '/talent-filter');
+    } else {
+        define('BASE_URL', '');
+    }
 }
 
 function getDB(): PDO {
