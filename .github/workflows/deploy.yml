@@ -1,0 +1,152 @@
+name: Deploy a servidor
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      # Método 1: webhook HTTP (rápido; no usa SSH ni rsync)
+      - name: Deploy via webhook
+        id: webhook
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          echo "=== Desplegando via webhook HTTP ==="
+
+          DEPLOY_URL="${{ secrets.DEPLOY_WEBHOOK_URL }}"
+          DEPLOY_TOKEN="${{ secrets.DEPLOY_WEBHOOK_TOKEN }}"
+
+          if [ -z "$DEPLOY_URL" ]; then
+            DEPLOY_URL="https://talent-filter.automatizaciones.sportsemotion.com/api/webhook-deploy.php"
+          fi
+          if [ -z "$DEPLOY_TOKEN" ]; then
+            DEPLOY_TOKEN="tf-deploy-2026-secure-token"
+          fi
+
+          echo "Llamando a webhook: $DEPLOY_URL"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST \
+            -H "X-Deploy-Token: $DEPLOY_TOKEN" \
+            -H "Content-Type: application/json" \
+            --max-time 180 \
+            "$DEPLOY_URL")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "HTTP Code: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "❌ Webhook falló (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+
+          # El PHP antiguo podía devolver 200 con HTML (warnings) + JSON success:false.
+          # Exigimos JSON con success:true (toleramos prefijo HTML; ver .github/scripts/verify_webhook_success.py).
+          if ! printf '%s' "$BODY" | python3 .github/scripts/verify_webhook_success.py; then
+            echo "❌ Webhook respondió sin success:true (revisa 404/repo privado, GITHUB_DEPLOY_TOKEN en servidor, carpeta storage/uploads)."
+            exit 1
+          fi
+
+          echo "✅ Deploy via webhook exitoso (HTTP 200 y JSON success:true)"
+
+      # Método 2: solo si el webhook falla — curl+tar en el servidor (sin rsync)
+      - name: Deploy via SSH (fallback)
+        if: steps.webhook.outcome == 'failure'
+        id: ssh_deploy
+        continue-on-error: true
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.REMOTE_HOST }}
+          REMOTE_USER: ${{ secrets.REMOTE_USER }}
+        run: |
+          set -euo pipefail
+          echo "=== Intentando deploy via SSH (fallback) ==="
+
+          if [ -z "${{ secrets.GITHUB_DEPLOY_PAT }}" ]; then
+            echo "::warning::Secret GITHUB_DEPLOY_PAT vacío: el servidor intentará la URL pública del .tar.gz (en repos privados suele dar 404). Crea un PAT con permiso Contents: Read y añade GITHUB_DEPLOY_PAT en Actions secrets."
+          else
+            echo "Secret GITHUB_DEPLOY_PAT presente (valor oculto en logs)."
+          fi
+
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$REMOTE_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+          # Sin comillas en ENDSSH para inyectar secrets desde GitHub Actions.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            "$REMOTE_USER@$REMOTE_HOST" << ENDSSH
+          set -euo pipefail
+          GITHUB_DEPLOY_PAT='${{ secrets.GITHUB_DEPLOY_PAT }}'
+          DEPLOY_PATH_OVERRIDE='${{ secrets.REMOTE_DEPLOY_PATH }}'
+          if [ -n "\$DEPLOY_PATH_OVERRIDE" ]; then
+            DEPLOY_ROOT="\$DEPLOY_PATH_OVERRIDE"
+          else
+            DEPLOY_ROOT="/var/www/talent-filter"
+          fi
+          echo "=== Descargando código desde GitHub (curl + tar en el servidor) ==="
+          echo "Ruta de despliegue: \$DEPLOY_ROOT"
+          mkdir -p "\$DEPLOY_ROOT"
+          if [ -n "\$GITHUB_DEPLOY_PAT" ]; then
+            echo "Usando API de GitHub (token configurado)."
+            if ! curl -sSL -f -H "Authorization: Bearer \$GITHUB_DEPLOY_PAT" -H "Accept: application/vnd.github+json" -H "User-Agent: TF-Deploy-SSH" "https://api.github.com/repos/JosmaSports/talentfilter/tarball/main" -o /tmp/talentfilter-main.tar.gz; then
+              echo "ERROR: curl a la API de GitHub falló (401/403/404 o red). Revisa que el PAT tenga acceso al repo JosmaSports/talentfilter y que no haya caducado."
+              exit 1
+            fi
+          else
+            echo "Descarga pública (fallará si el repo es privado)."
+            if ! curl -sSL -f https://github.com/JosmaSports/talentfilter/archive/refs/heads/main.tar.gz -o /tmp/talentfilter-main.tar.gz; then
+              echo "ERROR: descarga pública falló. Añade el secret GITHUB_DEPLOY_PAT en el repositorio."
+              exit 1
+            fi
+          fi
+          ls -la /tmp/talentfilter-main.tar.gz
+          tar xzf /tmp/talentfilter-main.tar.gz --strip-components=1 -C "\$DEPLOY_ROOT"
+          rm -f /tmp/talentfilter-main.tar.gz
+
+          cd "\$DEPLOY_ROOT"
+          chmod -R 755 api/ 2>/dev/null || true
+          chmod -R 775 uploads/ 2>/dev/null || true
+          if [ -f deploy.sh ]; then
+            bash deploy.sh
+          else
+            echo "AVISO: deploy.sh no existe en \$DEPLOY_ROOT (deploy de archivos solo)."
+          fi
+
+          echo "=== ✅ Deploy SSH fallback completado ==="
+          ENDSSH
+
+          rm -f ~/.ssh/deploy_key
+
+      - name: Resumen del deploy
+        if: always()
+        run: |
+          echo "=========================================="
+          echo "  RESUMEN DEL DEPLOY"
+          echo "=========================================="
+
+          if [ "${{ steps.webhook.outcome }}" = "success" ]; then
+            echo "  ✅ Deploy via WEBHOOK: EXITOSO"
+          elif [ "${{ steps.ssh_deploy.outcome }}" = "success" ]; then
+            echo "  ✅ Deploy via SSH (fallback): EXITOSO"
+          else
+            echo "  ❌ AMBOS MÉTODOS FALLARON O NO SE EJECUTARON"
+            echo ""
+            echo "  Webhook: ${{ steps.webhook.outcome }}"
+            echo "  SSH:     ${{ steps.ssh_deploy.outcome }}"
+            echo ""
+            echo "  Comprueba el webhook en el servidor y los secrets SSH si usas fallback."
+            exit 1
+          fi
+
+          echo "=========================================="

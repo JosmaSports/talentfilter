@@ -1,18 +1,58 @@
 <?php
-$host = 'localhost';
-$user = 'root';
-$pass = '';
-$dbname = 'talent_filter';
+/**
+ * Instalador de Talent Filter.
+ *
+ * Crea (si tiene permisos) la base de datos definida en config/database.php
+ * y aplica el esquema de tablas. Es idempotente: usa CREATE TABLE IF NOT EXISTS
+ * e INSERT IGNORE, por lo que se puede ejecutar varias veces sin romper datos.
+ *
+ * En producción el usuario MySQL puede no tener permiso para CREATE DATABASE;
+ * en ese caso, crea la BD manualmente y vuelve a cargar este script para que
+ * solo aplique el esquema.
+ */
+
+declare(strict_types=1);
+
+require __DIR__ . '/config/database.php';
+
+$pdoOptions = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    PDO::ATTR_EMULATE_PREPARES   => false,
+];
+
+function render_message(string $title, string $body, string $color = '#1a2332', ?string $cta = null): void {
+    $ctaHtml = $cta !== null ? $cta : '';
+    echo "<!DOCTYPE html><html lang='es'><head><meta charset='utf-8'><title>" . htmlspecialchars($title) . " - Talent Filter</title>";
+    echo "<style>body{font-family:system-ui,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;margin:0;padding:20px}";
+    echo ".card{background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center;max-width:560px}";
+    echo "h1{color:{$color};margin:0 0 12px}p{color:#555;line-height:1.5}.icon{font-size:48px;margin-bottom:8px}";
+    echo "code{background:#f4f4f5;padding:2px 6px;border-radius:4px;font-size:.92em}";
+    echo "a.btn{display:inline-block;margin-top:24px;padding:12px 28px;background:#1a2332;color:#fff;text-decoration:none;border-radius:8px;font-weight:600}</style></head>";
+    echo "<body><div class='card'><h1>" . htmlspecialchars($title) . "</h1><div>{$body}</div>{$ctaHtml}</div></body></html>";
+}
 
 try {
-    $pdo = new PDO("mysql:host=$host;charset=utf8mb4", $user, $pass, [
-        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION
-    ]);
+    try {
+        $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET;
+        $pdo = new PDO($dsn, DB_USER, DB_PASS, $pdoOptions);
+    } catch (PDOException $e) {
+        $isUnknownDb = strpos($e->getMessage(), '1049') !== false
+            || stripos($e->getMessage(), 'Unknown database') !== false;
 
-    $pdo->exec("CREATE DATABASE IF NOT EXISTS `$dbname` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
-    $pdo->exec("USE `$dbname`");
+        if (!$isUnknownDb) {
+            throw $e;
+        }
 
-    $sql = "
+        $dsnNoDb = 'mysql:host=' . DB_HOST . ';charset=' . DB_CHARSET;
+        $pdo = new PDO($dsnNoDb, DB_USER, DB_PASS, $pdoOptions);
+
+        $dbNameQuoted = '`' . str_replace('`', '``', DB_NAME) . '`';
+        $pdo->exec("CREATE DATABASE IF NOT EXISTS {$dbNameQuoted} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+        $pdo->exec("USE {$dbNameQuoted}");
+    }
+
+    $sql = <<<SQL
     CREATE TABLE IF NOT EXISTS selections (
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(255) NOT NULL,
@@ -84,7 +124,7 @@ try {
         INDEX idx_created (created_at),
         INDEX idx_selection (selection_id)
     ) ENGINE=InnoDB;
-    ";
+    SQL;
 
     $pdo->exec($sql);
 
@@ -123,26 +163,46 @@ Responde ÚNICAMENTE con un JSON válido sin texto adicional:
 }
 PROMPT;
 
-    $stmt = $pdo->prepare("INSERT IGNORE INTO config (config_key, config_value) VALUES (?, ?)");
+    $stmt = $pdo->prepare('INSERT IGNORE INTO config (config_key, config_value) VALUES (?, ?)');
     $stmt->execute(['openai_api_key', '']);
     $stmt->execute(['openai_model', 'gpt-4o-mini']);
     $stmt->execute(['max_tokens', '500']);
     $stmt->execute(['cv_detect_prompt', $defaultPrompt]);
 
-    echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Instalación - Talent Filter</title>";
-    echo "<style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;margin:0}";
-    echo ".card{background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center;max-width:500px}";
-    echo "h1{color:#1a2332}p{color:#666}.success{color:#28a745;font-size:48px}";
-    echo "a{display:inline-block;margin-top:20px;padding:12px 30px;background:#1a2332;color:#fff;text-decoration:none;border-radius:8px}</style></head>";
-    echo "<body><div class='card'><div class='success'>&#10003;</div><h1>Instalación completada</h1>";
-    echo "<p>La base de datos <strong>talent_filter</strong> ha sido creada correctamente con todas las tablas necesarias.</p>";
-    echo "<a href='index.php'>Ir a Talent Filter</a></div></body></html>";
+    $homeUrl = (defined('BASE_URL') && BASE_URL !== '') ? BASE_URL . '/index.php' : 'index.php';
+
+    render_message(
+        'Instalación completada',
+        '<div class="icon" style="color:#28a745">&#10003;</div>'
+        . '<p>La base de datos <strong>' . htmlspecialchars(DB_NAME) . '</strong> está lista en '
+        . '<code>' . htmlspecialchars(DB_HOST) . '</code> con todas las tablas necesarias.</p>',
+        '#1a2332',
+        '<a class="btn" href="' . htmlspecialchars($homeUrl) . '">Ir a Talent Filter</a>'
+    );
 
 } catch (PDOException $e) {
-    echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Error - Talent Filter</title>";
-    echo "<style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;margin:0}";
-    echo ".card{background:#fff;padding:40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.1);text-align:center;max-width:500px}";
-    echo "h1{color:#dc3545}p{color:#666;word-break:break-all}</style></head>";
-    echo "<body><div class='card'><h1>Error en la instalación</h1>";
-    echo "<p>" . htmlspecialchars($e->getMessage()) . "</p></div></body></html>";
+    $msg     = $e->getMessage();
+    $isAuth  = strpos($msg, '1045') !== false || stripos($msg, 'Access denied') !== false;
+    $isConn  = strpos($msg, '2002') !== false || stripos($msg, 'Connection refused') !== false
+        || strpos($msg, '2005') !== false || stripos($msg, 'Unknown MySQL server') !== false;
+    $isPerm  = strpos($msg, '1044') !== false || stripos($msg, 'denied for user') !== false;
+
+    $hint = '';
+    if ($isAuth) {
+        $hint = '<p>Credenciales rechazadas. Revisa <code>DB_USER</code> y <code>DB_PASS</code> en <code>config/database.php</code>.</p>';
+    } elseif ($isConn) {
+        $hint = '<p>No se puede contactar con MySQL en <code>' . htmlspecialchars(DB_HOST) . '</code>. '
+            . 'Verifica que el servidor está activo y que el firewall permite la conexión.</p>';
+    } elseif ($isPerm) {
+        $hint = '<p>El usuario <code>' . htmlspecialchars(DB_USER) . '</code> no tiene permiso para crear la base de datos. '
+            . 'Crea <code>' . htmlspecialchars(DB_NAME) . '</code> manualmente y vuelve a abrir este instalador para aplicar solo el esquema.</p>';
+    }
+
+    render_message(
+        'Error en la instalación',
+        $hint . '<details style="margin-top:16px;text-align:left"><summary style="cursor:pointer;color:#666">Detalle técnico</summary>'
+        . '<pre style="background:#f4f4f5;padding:12px;border-radius:6px;overflow:auto;font-size:.85em">'
+        . htmlspecialchars($msg) . '</pre></details>',
+        '#dc3545'
+    );
 }
