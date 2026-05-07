@@ -69,7 +69,10 @@ jobs:
           mkdir -p "$DEPLOY_ROOT/uploads/originals" \
                    "$DEPLOY_ROOT/uploads/pages" \
                    "$DEPLOY_ROOT/uploads/unified"
-          chmod -R 775 "$DEPLOY_ROOT/uploads" 2>/dev/null || true
+          # 777 para que PHP-FPM (corra como el usuario que sea, en host o
+          # dentro de un contenedor Docker) pueda escribir. El acceso publico
+          # a estos directorios ya esta bloqueado en .htaccess.
+          chmod -R 777 "$DEPLOY_ROOT/uploads" 2>/dev/null || true
 
           # Eliminar ficheros obsoletos que ya no estan en el repo
           # (tar extract no borra ficheros, solo los sobreescribe)
