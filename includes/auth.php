@@ -156,8 +156,67 @@ function requireLogin(): array {
     return $u;
 }
 
+/**
+ * Asegura que las respuestas de la API siempre sean JSON, capturando
+ * warnings y errores fatales que de otro modo emitirian HTML y romperian
+ * el JSON.parse en el frontend.
+ */
+function setupApiErrorHandlers(): void {
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    @ini_set('display_errors', '0');
+    @ini_set('html_errors', '0');
+    error_reporting(E_ALL);
+
+    if (ob_get_level() === 0) {
+        ob_start();
+    }
+
+    set_exception_handler(static function (\Throwable $e): void {
+        if (ob_get_level() > 0) {
+            @ob_clean();
+        }
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode([
+            'success' => false,
+            'error'   => 'Error interno: ' . $e->getMessage(),
+            'code'    => 'INTERNAL_ERROR',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        exit;
+    });
+
+    register_shutdown_function(static function (): void {
+        $err = error_get_last();
+        if ($err === null) return;
+        $fatalTypes = E_ERROR | E_CORE_ERROR | E_COMPILE_ERROR | E_PARSE | E_USER_ERROR | E_RECOVERABLE_ERROR;
+        if (($err['type'] & $fatalTypes) === 0) return;
+
+        if (ob_get_level() > 0) {
+            @ob_clean();
+        }
+        if (!headers_sent()) {
+            http_response_code(500);
+            header('Content-Type: application/json; charset=utf-8');
+        }
+        echo json_encode([
+            'success' => false,
+            'error'   => 'Error fatal: ' . ($err['message'] ?? 'desconocido'),
+            'code'    => 'FATAL_ERROR',
+            'where'   => isset($err['file']) ? basename($err['file']) . ':' . ($err['line'] ?? '?') : null,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    });
+}
+
 function requireApiAuth(): array {
+    setupApiErrorHandlers();
+
     if (!isLoggedIn()) {
+        if (ob_get_level() > 0) @ob_clean();
         http_response_code(401);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
@@ -169,6 +228,7 @@ function requireApiAuth(): array {
     }
     $u = getCurrentUser();
     if ($u === null) {
+        if (ob_get_level() > 0) @ob_clean();
         http_response_code(401);
         header('Content-Type: application/json; charset=utf-8');
         echo json_encode([

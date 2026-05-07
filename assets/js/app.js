@@ -31,8 +31,18 @@ function toast(message, type = 'info') {
 async function api(url, options = {}) {
     try {
         const resp = await fetch(url, options);
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || 'Error del servidor');
+        const text = await resp.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (parseErr) {
+            console.error('[API] Respuesta no-JSON', { url, status: resp.status, body: text });
+            const snippet = (text || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 200);
+            throw new Error(
+                `Respuesta inválida del servidor (HTTP ${resp.status})${snippet ? ': ' + snippet : ''}`
+            );
+        }
+        if (!resp.ok) throw new Error(data.error || data.message || 'Error del servidor');
         return data;
     } catch (e) {
         if (e.message !== 'Failed to fetch') toast(e.message, 'error');
@@ -237,7 +247,17 @@ async function startUpload() {
 
     try {
         const resp = await fetch(API.upload, { method: 'POST', body: formData });
-        const data = await resp.json();
+        const text = await resp.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (parseErr) {
+            console.error('[upload] Respuesta no-JSON', { status: resp.status, body: text });
+            const snippet = (text || '').replace(/<[^>]+>/g, ' ').trim().slice(0, 200);
+            throw new Error(
+                `Respuesta inválida del servidor (HTTP ${resp.status})${snippet ? ': ' + snippet : ''}`
+            );
+        }
 
         if (!resp.ok) throw new Error(data.error || 'Error al subir');
 
